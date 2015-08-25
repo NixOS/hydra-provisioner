@@ -1,0 +1,242 @@
+#! /usr/bin/env python2.7
+# -*- coding: utf-8 -*-
+
+import json
+import math
+import nixops.resources
+import nixops.statefile
+import os
+import subprocess
+import sys
+import time
+
+def log(s):
+    sys.stderr.write(s + "\n")
+
+def get_new_deployment_name(prefix):
+    """Generate a unique NixOps deployment name with the given prefix."""
+    names = {depl.name for depl in depls}
+    i = 0
+    while True:
+        name = prefix + "-" + str(i)
+        if name not in names: break
+        i += 1
+    return name
+
+def get_depl_arg(depl, key, default=""):
+    s = depl.args.get(key, default)
+    return s.replace('"', '') # FIXME: escaping
+
+def get_depl_time_left(depl):
+    m = depl.machines.get("machine", None)
+    if not m: return 0
+    next_charge_time = m.next_charge_time()
+    if not next_charge_time: return 0
+    return max(next_charge_time - int(time.time()), 0)
+
+sf = nixops.statefile.StateFile(nixops.statefile.get_default_state_file())
+all_depls = sf.get_all_deployments()
+depls = [depl for depl in all_depls if get_depl_arg(depl, "tag") == 'hydra-provisioned']
+
+# Read the config file.
+config = json.loads(subprocess.check_output(
+    ["nix-instantiate", "--eval", "--strict", "--json", "hydra-provisioner-conf.nix"]))
+
+tag = config.get("tag", "hydra-provisioned")
+
+# Get status info from the Hydra queue runner.
+# FIXME: handle error.
+status = json.loads(subprocess.check_output(
+    ["/home/eelco/Dev/hydra/src/hydra-queue-runner/hydra-queue-runner", "--status"]))
+
+# Squash i686-linux into x86_64-linux. We assume there are no actual
+# i686-linux build machines.
+for type_name in status["machineTypes"].keys():
+    if type_name.startswith("i686-linux"):
+        target_name = type_name.replace("i686-linux", "x86_64-linux")
+        type_status = status["machineTypes"][type_name]
+        if target_name in status["machineTypes"]:
+            status["machineTypes"][target_name]["runnable"] += type_status["runnable"]
+        else:
+            status["machineTypes"][target_name] = type_status
+        del status["machineTypes"][type_name]
+
+# For each machine type, determine how many machines are needed, and
+# create new machines if necessary.
+in_use = set({})
+
+for type_name, type_status in status["machineTypes"].iteritems():
+    type_config = config["systemTypes"].get(type_name, None)
+    if not type_config:
+        log("cannot provision machines of type {0}".format(type_name))
+        continue
+
+    runnable = type_status["runnable"]
+    ignored_runnables = type_config.get("ignoredRunnables", 0)
+    runnables_per_machine = type_config.get("runnablesPerMachine", 10)
+    needed = int(math.ceil(max(runnable - ignored_runnables, 0) / float(runnables_per_machine)))
+    needed = min(max(needed, type_config.get("minMachines", 0)), type_config.get("maxMachines", 1))
+    log("machine type {0} has {1} runnables, needs {2} machines".format(type_name, runnable, needed))
+
+    def depl_state(depl):
+        machine = depl.machines.get("machine", None)
+        return machine.state if machine else nixops.resources.ResourceState.MISSING
+
+    def depl_sort_key(depl):
+        x = [depl_state(depl) != nixops.resources.ResourceState.UP]
+        return x
+
+    existing = [depl for depl in depls if get_depl_arg(depl, "type") == type_name]
+    existing.sort(key=depl_sort_key)
+
+    # FIXME: error handling.
+    have = 0
+    while have < needed:
+        if len(existing) == 0:
+            # Create a new machine.
+            # FIXME: make this transactional.
+            name = get_new_deployment_name(tag)
+
+            new_depl = sf.create_deployment()
+            new_depl.name = name
+            new_depl.nix_exprs = [os.path.abspath(type_config["nixopsExpr"])]
+            new_depl.set_argstr("type", type_name)
+            new_depl.set_argstr("tag", tag)
+            depls.append(new_depl)
+            all_depls.append(new_depl)
+
+            log("created deployment ‘{0}’ of type ‘{1}’".format(name, type_name))
+
+            new_depl.deploy()
+
+            in_use.add(new_depl)
+
+        else:
+            depl = existing[0]
+            check = False
+
+            if depl_state(depl) == nixops.resources.ResourceState.UP:
+                # We have an existing machine and it's up. Check
+                # whether it's really up, and if so, use it.
+
+                depl.machines["machine"].check() # FIXME: only do this periodically
+                if depl_state(depl) != nixops.resources.ResourceState.UP:
+                    # It's not actually up. Resort and retry.
+                    existing.sort(key=depl_sort_key)
+                    continue
+
+            else:
+                # The machine is down, so restart it.
+                check = True
+
+            # FIXME: only do this periodically
+            log("updating deployment ‘{0}’ of type ‘{1}’".format(depl.name, type_name))
+            depl.deploy(check=check)
+
+            existing.pop(0)
+            in_use.add(depl)
+
+        have += 1
+
+# Keep recently used machines in nix.machines.
+expired = set({})
+for depl in depls:
+    if depl in in_use: continue
+
+    if depl_state(depl) not in [nixops.resources.ResourceState.UP, nixops.resources.ResourceState.STARTING]:
+        expired.add(depl)
+        continue
+
+    type_name = get_depl_arg(depl, "type")
+    type_config = config["systemTypes"].get(type_name, None)
+    type_status = status["machineTypes"].get(type_name, None)
+
+    grace_period = type_config.get("gracePeriod", 0) if type_config else 0
+
+    # Keep machines that still have at least 30 minutes of paid time
+    # left.
+    time_left = get_depl_time_left(depl)
+    if time_left >= 30 * 60:
+        log("keeping deployment ‘{0}’ because it has {1}s left".format(depl.name, time_left))
+        in_use.add(depl)
+        continue
+
+    # Keep machines that are currently in use. FIXME: we may want to
+    # destroy them anyway, in order not to keep an excessive number of
+    # machines around. Hydra will retry aborted build steps anyway.
+    if type_status and type_status["running"] != 0:
+        log("keeping active deployment ‘{0}’".format(depl.name))
+
+        # If this machine doesn't have a grace period, then don't add
+        # it to the machines list. This prevents new builds from
+        # starting.
+        if grace_period > 0:
+            in_use.add(depl)
+
+        continue
+
+    # Keep machines that have been used within the last ‘gracePeriod’
+    # seconds.
+    last_active = type_status.get("lastActive", 0) if type_status else 0
+    if last_active == 0: last_active = int(time.time()) - status["uptime"]
+
+    if int(time.time()) - last_active < grace_period:
+        log("keeping recently used deployment ‘{0}’".format(depl.name))
+        in_use.add(depl)
+        continue
+
+    expired.add(depl)
+
+# Generate the new nix.machines.
+machines_list = []
+for depl in in_use:
+    m = depl.machines.get("machine", None)
+    assert(m)
+
+    type_name = get_depl_arg(depl, "type")
+    type_config = config["systemTypes"][type_name]
+
+    if ":" not in type_name: type_name += ":"
+    (systems, features) = type_name.split(":", 1)
+    systems_list = systems.split(",")
+    features_list = features.split(",")
+    if "x86_64-linux" in systems_list and "i686-linux" not in systems_list:
+        systems_list.append("i686-linux")
+
+    machines_list.append("root@{0} {1} {2} {3} {4} {5} {6}\n".format(
+        m.get_ssh_name(),
+        ",".join(systems_list),
+        type_config.get("sshKey", "-"),
+        type_config.get("maxJobs", 1),
+        type_config.get("speedFactor", 1),
+        ",".join(features_list) if features_list else "-",
+        ",".join(features_list) if features_list else "-"))
+
+nixops.util.write_file("hydra-provisioner.machines", "".join(machines_list))
+
+# Stop or destroyed unused machines.
+for depl in expired:
+    type_name = get_depl_arg(depl, "type")
+    type_config = config["systemTypes"].get(type_name, None)
+
+    if depl_state(depl) in [nixops.resources.ResourceState.UP, nixops.resources.ResourceState.STARTING]:
+
+        # Don't stop/destroy machines that still have at least 10 minutes
+        # of paid time left.
+        time_left = get_depl_time_left(depl)
+        if time_left >= 10 * 60:
+            log("not stopping/destroying deployment ‘{0}’ because it has {1}s left".format(depl.name, time_left))
+            continue
+
+    stop_on_idle = type_config.get("stopOnIdle", False) if type_config else False
+
+    if stop_on_idle:
+        if depl_state(depl) != nixops.resources.ResourceState.STOPPED:
+            log("stopping deployment ‘{0}’".format(depl.name))
+            depl.stop_machines()
+
+    else:
+        log("destroying deployment ‘{0}’".format(depl.name))
+        depl.logger.set_autoresponse("y")
+        depl.destroy_resources()
+        depl.delete()
