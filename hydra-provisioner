@@ -75,9 +75,10 @@ for type_name, type_status in status["machineTypes"].iteritems():
     runnable = type_status["runnable"]
     ignored_runnables = type_config.get("ignoredRunnables", 0)
     runnables_per_machine = type_config.get("runnablesPerMachine", 10)
-    needed = int(math.ceil(max(runnable - ignored_runnables, 0) / float(runnables_per_machine)))
-    needed = min(max(needed, type_config.get("minMachines", 0)), type_config.get("maxMachines", 1))
-    log("machine type {0} has {1} runnables, needs {2} machines".format(type_name, runnable, needed))
+    wanted = int(math.ceil(max(runnable - ignored_runnables, 0) / float(runnables_per_machine)))
+    allowed = min(max(wanted, type_config.get("minMachines", 0)), type_config.get("maxMachines", 1))
+    log("machine type {0} has {1} runnables, wants {2} machines, will get {3} machines"
+        .format(type_name, runnable, wanted, allowed))
 
     def depl_state(depl):
         machine = depl.machines.get("machine", None)
@@ -92,7 +93,7 @@ for type_name, type_status in status["machineTypes"].iteritems():
 
     # FIXME: error handling.
     have = 0
-    while have < needed:
+    while have < allowed:
         if len(existing) == 0:
             # Create a new machine.
             # FIXME: make this transactional.
