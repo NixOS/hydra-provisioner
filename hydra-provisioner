@@ -1,6 +1,7 @@
 #! /usr/bin/env python2.7
 # -*- coding: utf-8 -*-
 
+import base64
 import json
 import math
 import nixops.resources
@@ -199,18 +200,24 @@ for depl in in_use:
     if ":" not in type_name: type_name += ":"
     (systems, features) = type_name.split(":", 1)
     systems_list = systems.split(",")
-    features_list = features.split(",")
+    features_list = features.split(",") if features != "" else []
     if "x86_64-linux" in systems_list and "i686-linux" not in systems_list:
         systems_list.append("i686-linux")
 
-    machines_list.append("root@{0} {1} {2} {3} {4} {5} {6}\n".format(
-        m.get_ssh_name(),
+    columns = [
+        "root@" + m.get_ssh_name(),
         ",".join(systems_list),
         type_config.get("sshKey", "-"),
-        type_config.get("maxJobs", 1),
-        type_config.get("speedFactor", 1),
+        str(type_config.get("maxJobs", 1)),
+        str(type_config.get("speedFactor", 1)),
         ",".join(features_list) if features_list else "-",
-        ",".join(features_list) if features_list else "-"))
+        ",".join(features_list) if features_list else "-",
+        base64.b64encode(m.public_host_key) if m.public_host_key else "-"
+    ]
+
+    assert(all(c != "" for c in columns))
+
+    machines_list.append(" ".join(columns) + "\n")
 
 nixops.util.write_file("hydra-provisioner.machines", "".join(machines_list))
 
