@@ -165,7 +165,9 @@ for depl in depls:
     # Keep machines that are currently in use. FIXME: we may want to
     # destroy them anyway, in order not to keep an excessive number of
     # machines around. Hydra will retry aborted build steps anyway.
-    if type_status and type_status["running"] != 0:
+    m = depl.machines.get("machine", None)
+    machine_status = status["machines"].get("root@" + m.get_ssh_name(), {})
+    if machine_status and machine_status.get("currentJobs", 0) != 0:
         log("keeping active deployment ‘{0}’".format(depl.name))
 
         # If this machine doesn't have a grace period, then don't add
