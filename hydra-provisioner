@@ -9,6 +9,7 @@ import nixops.statefile
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 def log(s):
@@ -35,20 +36,26 @@ def get_depl_time_left(depl):
     if not next_charge_time: return 0
     return max(next_charge_time - int(time.time()), 0)
 
-sf = nixops.statefile.StateFile(nixops.statefile.get_default_state_file())
-all_depls = sf.get_all_deployments()
-depls = [depl for depl in all_depls if get_depl_arg(depl, "tag") == 'hydra-provisioned']
-
 # Read the config file.
+if len(sys.argv) != 2:
+    sys.stderr.write("Syntax: hydra-provisioner <CONFIG-FILE>\n")
+    sys.exit(1)
+config_file = sys.argv[1]
+
 config = json.loads(subprocess.check_output(
-    ["nix-instantiate", "--eval", "--strict", "--json", "hydra-provisioner-conf.nix"]))
+    ["nix-instantiate", "--eval", "--strict", "--json", config_file]))
 
 tag = config.get("tag", "hydra-provisioned")
 
+# Get the current deployments.
+sf = nixops.statefile.StateFile(nixops.statefile.get_default_state_file())
+all_depls = sf.get_all_deployments()
+depls = [depl for depl in all_depls if get_depl_arg(depl, "tag") == tag]
+
 # Get status info from the Hydra queue runner.
 # FIXME: handle error.
-status = json.loads(subprocess.check_output(
-    ["/home/eelco/Dev/hydra/src/hydra-queue-runner/hydra-queue-runner", "--status"]))
+status_command = config.get("statusCommand", ["hydra-queue-runner", "--status"])
+status = json.loads(subprocess.check_output(status_command))
 
 # Squash i686-linux into x86_64-linux. We assume there are no actual
 # i686-linux build machines.
@@ -222,7 +229,15 @@ for depl in in_use:
 
     machines_list.append(" ".join(columns) + "\n")
 
-nixops.util.write_file("hydra-provisioner.machines", "".join(machines_list))
+machines_file = "".join(machines_list)
+update_command = config.get("updateCommand", None)
+if update_command:
+    machines_tmp = tempfile.NamedTemporaryFile()
+    machines_tmp.write(machines_file)
+    machines_tmp.seek(0)
+    subprocess.check_call(update_command, stdin=machines_tmp)
+else:
+    nixops.util.write_file("/var/lib/hydra/provisioned.machines", machines_file)
 
 # Stop or destroyed unused machines.
 for depl in expired:
