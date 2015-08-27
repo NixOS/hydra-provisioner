@@ -6,7 +6,7 @@ To run this script:
 ```
 $ hydra-provisioner conf.nix
 ```
-where `conf.nix` is a Nix expression containing a specification of when and how to create machines. For example:
+This command should be run periodically (e.g. every 5 minutes). `conf.nix` is a Nix expression containing a specification of when and how to create machines. For example:
 ```
 {
 
@@ -101,3 +101,5 @@ The NixOps specification (e.g. `deployment.nix`) must declare one machine named 
 
 }
 ```
+
+A real-world configuration (for `hydra.nixos.org`) can be found at https://github.com/NixOS/nixos-org-configurations/tree/master/hydra-provisioner.
