@@ -36,6 +36,10 @@ def get_depl_time_left(depl):
     if not next_charge_time: return 0
     return max(next_charge_time - int(time.time()), 0)
 
+def depl_state(depl):
+    machine = depl.machines.get("machine", None)
+    return machine.state if machine else nixops.resources.ResourceState.MISSING
+
 # Read the config file.
 if len(sys.argv) != 2:
     sys.stderr.write("Syntax: hydra-provisioner <CONFIG-FILE>\n")
@@ -86,10 +90,6 @@ for type_name, type_status in status["machineTypes"].iteritems():
     allowed = min(max(wanted, type_config.get("minMachines", 0)), type_config.get("maxMachines", 1))
     log("machine type {0} has {1} runnables, wants {2} machines, will get {3} machines"
         .format(type_name, runnable, wanted, allowed))
-
-    def depl_state(depl):
-        machine = depl.machines.get("machine", None)
-        return machine.state if machine else nixops.resources.ResourceState.MISSING
 
     def depl_sort_key(depl):
         x = [depl_state(depl) != nixops.resources.ResourceState.UP]
