@@ -109,6 +109,7 @@ for type_name, type_status in status["machineTypes"].iteritems():
             new_depl = sf.create_deployment()
             new_depl.name = name
             new_depl.nix_exprs = [os.path.abspath(type_config["nixopsExpr"])]
+            new_depl.nix_path = [nixops.util.abs_nix_path(x) for x in type_config.get("nixPath", [])]
             new_depl.set_argstr("type", type_name)
             new_depl.set_argstr("tag", tag)
             depls.append(new_depl)
