@@ -192,7 +192,7 @@ for depl in depls:
     # Keep machines that have been used within the last ‘gracePeriod’
     # seconds.
     last_active = type_status.get("lastActive", 0) if type_status else 0
-    if last_active == 0: last_active = int(time.time()) - status["uptime"]
+    if last_active == 0: last_active = int(time.time()) - status["uptime"] + 1800
 
     if int(time.time()) - last_active < grace_period:
         log("keeping recently used deployment ‘{0}’".format(depl.name))
