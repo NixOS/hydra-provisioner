@@ -61,7 +61,10 @@ depls = [depl for depl in all_depls if get_depl_arg(depl, "tag") == tag]
 # Get status info from the Hydra queue runner.
 # FIXME: handle error.
 status_command = config.get("statusCommand", ["hydra-queue-runner", "--status"])
-status = json.loads(subprocess.check_output(status_command))
+try:
+    status = json.loads(subprocess.check_output(status_command))
+except subprocess.CalledProcessError:
+    status = {"machineTypes": {}, "machines": {}, "uptime": 0}
 
 # Squash i686-linux into x86_64-linux. We assume there are no actual
 # i686-linux build machines.
@@ -75,11 +78,14 @@ for type_name in status["machineTypes"].keys():
             status["machineTypes"][target_name] = type_status
         del status["machineTypes"][type_name]
 
+system_types = set(status["machineTypes"].keys()).union(set(config["systemTypes"].keys()))
+
 # For each machine type, determine how many machines are needed, and
 # create new machines if necessary.
 in_use = set({})
 
-for type_name, type_status in status["machineTypes"].iteritems():
+for type_name in system_types:
+    type_status = status["machineTypes"].get(type_name, {"runnable": 0})
     type_config = config["systemTypes"].get(type_name, None)
     if not type_config:
         log("cannot provision machines of type {0}".format(type_name))
