@@ -1,4 +1,4 @@
-#! /usr/bin/env python2.7
+#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import base64
@@ -11,6 +11,10 @@ import subprocess
 import sys
 import tempfile
 import time
+
+own_modules = os.path.realpath(os.path.dirname(__file__) + "/../share/nix/hydra-provisioner")
+if not os.path.exists(own_modules):
+    own_modules = os.path.dirname(__file__)
 
 def log(s):
     sys.stderr.write(s + "\n")
@@ -114,20 +118,16 @@ for type_name in system_types:
             # FIXME: make this transactional.
             name = get_new_deployment_name(tag)
 
-            new_depl = sf.create_deployment()
-            new_depl.name = name
-            new_depl.nix_exprs = [os.path.abspath(type_config["nixopsExpr"])]
-            new_depl.nix_path = [nixops.util.abs_nix_path(x) for x in type_config.get("nixPath", [])]
-            new_depl.set_argstr("type", type_name)
-            new_depl.set_argstr("tag", tag)
-            depls.append(new_depl)
-            all_depls.append(new_depl)
+            depl = sf.create_deployment()
+            depl.name = name
+            depl.nix_exprs = [os.path.abspath(type_config["nixopsExpr"])]
+            depl.nix_path = [nixops.util.abs_nix_path(x) for x in type_config.get("nixPath", [])]
+            depl.set_argstr("type", type_name)
+            depl.set_argstr("tag", tag)
+            depls.append(depl)
+            all_depls.append(depl)
 
             log("created deployment ‘{0}’ of type ‘{1}’".format(name, type_name))
-
-            new_depl.deploy()
-
-            in_use.add(new_depl)
 
         else:
             depl = existing[0]
@@ -149,10 +149,14 @@ for type_name in system_types:
 
             # FIXME: only do this periodically
             log("updating deployment ‘{0}’ of type ‘{1}’".format(depl.name, type_name))
-            depl.deploy(check=check)
 
             existing.pop(0)
-            in_use.add(depl)
+
+        depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
+        depl.deploy(check=check)
+        depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
+        depl.deploy(check=check)
+        in_use.add(depl)
 
         have += 1
 
