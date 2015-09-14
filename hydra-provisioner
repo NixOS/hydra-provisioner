@@ -153,15 +153,13 @@ for type_name in system_types:
 
             existing.pop(0)
 
-        depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
-        depl.deploy(check=True)
-        depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
         in_use.add(depl)
 
         have += 1
 
 # Keep recently used machines in nix.machines.
 expired = set({})
+unusable = set({})
 for depl in depls:
     if depl in in_use: continue
 
@@ -190,12 +188,13 @@ for depl in depls:
     machine_status = status["machines"].get("root@" + m.get_ssh_name(), {})
     if machine_status and machine_status.get("currentJobs", 0) != 0:
         log("keeping active deployment ‘{0}’".format(depl.name))
+        in_use.add(depl)
 
         # If this machine doesn't have a grace period, then don't add
         # it to the machines list. This prevents new builds from
         # starting.
         if grace_period > 0:
-            in_use.add(depl)
+            unusable.add(depl)
 
         continue
 
@@ -211,9 +210,17 @@ for depl in depls:
 
     expired.add(depl)
 
+# Deploy the active machines. FIXME: do in parallel.
+for depl in in_use:
+    depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
+    depl.deploy(check=True)
+    depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
+
 # Generate the new nix.machines.
 machines_list = []
 for depl in in_use:
+    if depl in unusable: continue
+
     m = depl.machines.get("machine", None)
     assert(m)
 
