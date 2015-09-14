@@ -113,6 +113,8 @@ for type_name in system_types:
     # FIXME: error handling.
     have = 0
     while have < allowed:
+        check = False
+
         if len(existing) == 0:
             # Create a new machine.
             # FIXME: make this transactional.
@@ -131,7 +133,6 @@ for type_name in system_types:
 
         else:
             depl = existing[0]
-            check = False
 
             if depl_state(depl) == nixops.resources.ResourceState.UP:
                 # We have an existing machine and it's up. Check
@@ -153,9 +154,8 @@ for type_name in system_types:
             existing.pop(0)
 
         depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
-        depl.deploy(check=check)
+        depl.deploy(check=True)
         depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
-        depl.deploy(check=check)
         in_use.add(depl)
 
         have += 1
