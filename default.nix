@@ -20,7 +20,7 @@ stdenv.mkDerivation {
     ''
       mkdir -p $out/bin $out/share/nix/hydra-provisioner
       cp ${./hydra-provisioner} $out/bin/hydra-provisioner
-      cp ${./auto-shutdown.nix} $out/share/nix/hydra-provisioner
+      cp ${./auto-shutdown.nix} $out/share/nix/hydra-provisioner/auto-shutdown.nix
       wrapPythonPrograms
     '';
 }
