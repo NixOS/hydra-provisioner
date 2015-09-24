@@ -87,6 +87,7 @@ system_types = set(status["machineTypes"].keys()).union(set(config["systemTypes"
 # For each machine type, determine how many machines are needed, and
 # create new machines if necessary.
 in_use = set({})
+up_to_date = set({})
 
 for type_name in system_types:
     type_status = status["machineTypes"].get(type_name, {"runnable": 0})
@@ -144,12 +145,7 @@ for type_name in system_types:
                     existing.sort(key=depl_sort_key)
                     continue
 
-            else:
-                # The machine is down, so restart it.
-                check = True
-
-            # FIXME: only do this periodically
-            log("updating deployment ‘{0}’ of type ‘{1}’".format(depl.name, type_name))
+                up_to_date.add(depl) # FIXME
 
             existing.pop(0)
 
@@ -212,8 +208,10 @@ for depl in depls:
 
 # Deploy the active machines. FIXME: do in parallel.
 for depl in in_use:
-    depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
-    depl.deploy(check=True)
+    if depl not in up_to_date:
+        log("updating deployment ‘{0}’...".format(depl.name))
+        depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
+        depl.deploy(check=True)
     depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
 
 # Generate the new nix.machines.
