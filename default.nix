@@ -9,7 +9,7 @@ in
 stdenv.mkDerivation {
   name = "hydra-provisioner";
 
-  buildInputs = with python2Packages; [ wrapPython python ];
+  buildInputs = with python2Packages; [ wrapPython python nixops ];
 
   pythonPath = [ nixops nixUnstable ];
 
