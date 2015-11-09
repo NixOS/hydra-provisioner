@@ -68,7 +68,10 @@ status_command = config.get("statusCommand", ["hydra-queue-runner", "--status"])
 try:
     status = json.loads(subprocess.check_output(status_command))
 except subprocess.CalledProcessError:
-    status = {"machineTypes": {}, "machines": {}, "uptime": 0}
+    status = None
+
+if not status or status["status"] == "down":
+    status = {"status": "down", "machineTypes": {}, "machines": {}, "uptime": 0}
 
 # Squash i686-linux into x86_64-linux. We assume there are no actual
 # i686-linux build machines.
