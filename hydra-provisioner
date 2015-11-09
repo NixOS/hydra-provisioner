@@ -113,6 +113,7 @@ for type_name in system_types:
 
     # FIXME: error handling.
     have = 0
+    created = 0
     while have < allowed:
         check = False
 
@@ -123,14 +124,13 @@ for type_name in system_types:
 
             depl = sf.create_deployment()
             depl.name = name
-            depl.nix_exprs = [os.path.abspath(type_config["nixopsExpr"])]
-            depl.nix_path = [nixops.util.abs_nix_path(x) for x in type_config.get("nixPath", [])]
             depl.set_argstr("type", type_name)
             depl.set_argstr("tag", tag)
             depls.append(depl)
             all_depls.append(depl)
 
             log("created deployment ‘{0}’ of type ‘{1}’".format(name, type_name))
+            created += 1
 
         else:
             depl = existing[0]
@@ -149,9 +149,14 @@ for type_name in system_types:
 
             existing.pop(0)
 
+        depl.nix_exprs = [os.path.abspath(type_config["nixopsExpr"])]
+        depl.nix_path = [nixops.util.abs_nix_path(x) for x in type_config.get("nixPath", [])]
+
         in_use.add(depl)
 
         have += 1
+
+        if created >= 1: break
 
 # Keep recently used machines in nix.machines.
 expired = set({})
