@@ -148,7 +148,11 @@ for type_name in system_types:
                     existing.sort(key=depl_sort_key)
                     continue
 
-                up_to_date.add(depl) # FIXME
+                #up_to_date.add(depl) # FIXME
+
+            elif depl_state(depl) == nixops.resources.ResourceState.MISSING:
+                existing.pop(0)
+                continue
 
             existing.pop(0)
 
@@ -215,16 +219,23 @@ for depl in depls:
     expired.add(depl)
 
 # Deploy the active machines. FIXME: do in parallel.
+deployed = set({})
 for depl in in_use:
     if depl not in up_to_date:
         log("updating deployment ‘{0}’...".format(depl.name))
         depl.extra_nix_path.append("hydra-provisioner=" + own_modules)
-        depl.deploy(check=True)
-    depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
+        try:
+            depl.deploy(check=True)
+            depl.machines["machine"].ssh.run_command(["touch", "/run/keep-alive"])
+            deployed.add(depl)
+        except Exception as e:
+            log("error deploying ‘{0}’: {1}".format(depl.name, e))
+            continue
+    deployed.add(depl)
 
 # Generate the new nix.machines.
 machines_list = []
-for depl in in_use:
+for depl in deployed:
     if depl in unusable: continue
 
     m = depl.machines.get("machine", None)
