@@ -274,7 +274,7 @@ if update_command:
     machines_tmp.seek(0)
     subprocess.check_call(update_command, stdin=machines_tmp)
 else:
-    nixops.util.write_file("/var/lib/hydra/provisioned.machines", machines_file)
+    nixops.util.write_file("/var/lib/hydra/provisioner/machines", machines_file)
 
 # Stop or destroyed unused machines.
 for depl in expired:

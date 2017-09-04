@@ -68,7 +68,7 @@ This command should be run periodically (e.g. every 5 minutes). `conf.nix` is a 
   
   # Command for writing the queue runner's machines file. The contents are 
   # passed via stdin.
-  #updateCommand = [ "/bin/sh" "-c" "cat > /var/lib/hydra/provisioned.machines" ];
+  #updateCommand = [ "/bin/sh" "-c" "cat > /var/lib/hydra/provisioner/machines" ];
 }
 ```
 The NixOps specification (e.g. `deployment.nix`) must declare one machine named `machine`. The provisioner will create a separate NixOps deployment for each machine that it creates. A typical NixOps specification looks like this:
