@@ -1,17 +1,15 @@
-with import <nixpkgs> {};
+{ pkgs ? import <nixpkgs> {}
+, nixops ? pkgs.nixops
+}:
 
-let
-
-  nixops = (import <nixops/release.nix> {}).build.x86_64-linux;
-
-in
+with pkgs;
 
 stdenv.mkDerivation {
   name = "hydra-provisioner";
 
   buildInputs = with python2Packages; [ wrapPython python nixops ];
 
-  pythonPath = [ nixops nixUnstable ];
+  pythonPath = [ nixops nixUnstable ] ++ nixops.pythonPath;
 
   unpackPhase = "true";
   buildPhase = "true";
