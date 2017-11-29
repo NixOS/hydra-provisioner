@@ -3,11 +3,11 @@
 `hydra-provisioner` is a script that automatically creates and destroys build machines (typically EC2 instances) for a Hydra server based on the state of the Hydra queue runner. For instance, if there are many runnable build steps for a particular system type (e.g. `x86_64-linux`), it will create additional build machines, then destroy them when they are no longer needed. The machines are managed using NixOps.
 
 To run this script:
-```
+```bash
 $ hydra-provisioner conf.nix
 ```
 This command should be run periodically (e.g. every 5 minutes). `conf.nix` is a Nix expression containing a specification of when and how to create machines. For example:
-```
+```nix
 {
 
   # Tag used for NixOps deployments created by the provisioner. Useful
@@ -72,7 +72,7 @@ This command should be run periodically (e.g. every 5 minutes). `conf.nix` is a 
 }
 ```
 The NixOps specification (e.g. `deployment.nix`) must declare one machine named `machine`. The provisioner will create a separate NixOps deployment for each machine that it creates. A typical NixOps specification looks like this:
-```
+```nix
 # The "type" argument corresponds to the system type (such as 
 # "x86_64-linux:benchmark"), and can be used for creating different
 # kinds of machines from the same NixOps specification.
